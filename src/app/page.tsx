@@ -1,19 +1,18 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Upload, Video, X, Sparkles, Zap, Play } from 'lucide-react';
-import VideoPlayer from '../components/VideoPlayer';
+import { Sparkles, Zap, Play, MessageSquare } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence, useAnimation } from 'motion/react';
 
 
 export default function Home() {
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [isDragOver, setIsDragOver] = useState(false);
+  const [textInput, setTextInput] = useState<string>('');
   const [streamOutput, setStreamOutput] = useState<string>('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [titleVisible, setTitleVisible] = useState(false);
   const [showParticles, setShowParticles] = useState(false);
+  const terminalRef = useRef<HTMLDivElement>(null);
   
   const controls = useAnimation();
   
@@ -23,38 +22,27 @@ export default function Home() {
     setShowParticles(true);
   }, []);
 
+  // Auto-scroll terminal to bottom when new content is added
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+    }
+  }, [streamOutput]);
 
-  
-    const fileInput = useRef<HTMLInputElement | null>(null);
     const router = useRouter();
 
-
-    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-        setUploadedFile(file);
-        }
+    const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        setTextInput(e.target.value);
     };
 
-    const handleRemoveFile = () => {
-        setUploadedFile(null);
-        if (fileInput.current) {
-            fileInput.current.value = '';
-        }
-    };
-
-    const handleUploadClick = () => {
-        fileInput.current?.click();
-    };
-
-    async function uploadFile(evt: React.FormEvent) {
+    async function launchAgent(evt: React.FormEvent) {
         
         evt.preventDefault();
-        console.log("Running code");
+        console.log("Launching AI agent");
         
-        // check if a video file is selected
-        if (!uploadedFile) {
-            alert('Please select a video file before running the code.');
+        // check if text input is provided
+        if (!textInput.trim()) {
+            alert('Please enter some instructions before launching the AI agent.');
             return;
         }
 
@@ -63,14 +51,16 @@ export default function Home() {
 
         try {
             console.log('Starting stream request...');
-            const formData = new FormData();
-            if (fileInput.current?.files?.[0]) {
-                formData.append("file", fileInput.current.files[0]);
-            }
+            const requestBody = {
+                text: textInput
+            };
 
             const response = await fetch("/api/chat", { 
                 method: "POST", 
-                body: formData 
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
             });
 
             console.log('Response received:', response.status, response.headers.get('content-type'));
@@ -110,11 +100,65 @@ export default function Home() {
                             if (data.type === 'connected') {
                                 setStreamOutput(prev => prev + `🔗 ${data.message}\n\n`);
                             } else if (data.type === 'step') {
-                                setStreamOutput(prev => prev + `📍 [${data.timestamp}]\n${JSON.stringify(data.data, null, 2)}\n\n`);
+                                const stepData = data.data;
+                                let formattedOutput = `\n🤖 Step ${stepData.number}\n`;
+                                formattedOutput += `⏰ ${new Date(data.timestamp).toLocaleTimeString()}\n`;
+                                
+                                if (stepData.url && stepData.url !== 'about:blank') {
+                                    formattedOutput += `🌐 URL: ${stepData.url}\n`;
+                                }
+                                
+                                if (stepData.memory) {
+                                    formattedOutput += `🧠 Memory: ${stepData.memory}\n`;
+                                }
+                                
+                                if (stepData.nextGoal) {
+                                    formattedOutput += `🎯 Next Goal: ${stepData.nextGoal}\n`;
+                                }
+                                
+                                if (stepData.screenshotUrl) {
+                                    formattedOutput += `📸 Screenshot: Available\n`;
+                                }
+                                
+                                if (stepData.actions && stepData.actions.length > 0) {
+                                    formattedOutput += `🔧 Actions:\n`;
+                                    stepData.actions.forEach((action: string, index: number) => {
+                                        try {
+                                            const actionObj = JSON.parse(action);
+                                            const actionType = Object.keys(actionObj)[0];
+                                            const actionData = actionObj[actionType];
+                                            
+                                            switch (actionType) {
+                                                case 'go_to_url':
+                                                    formattedOutput += `   → Navigate to: ${actionData.url}\n`;
+                                                    break;
+                                                case 'click_element_by_index':
+                                                    formattedOutput += `   → Click element at index: ${actionData.index}\n`;
+                                                    break;
+                                                case 'done':
+                                                    formattedOutput += `   → Task completed: ${actionData.text}\n`;
+                                                    break;
+                                                case 'type_text':
+                                                    formattedOutput += `   → Type text: "${actionData.text}"\n`;
+                                                    break;
+                                                case 'scroll':
+                                                    formattedOutput += `   → Scroll: ${actionData.direction}\n`;
+                                                    break;
+                                                default:
+                                                    formattedOutput += `   → ${actionType}: ${JSON.stringify(actionData)}\n`;
+                                            }
+                                        } catch (e) {
+                                            formattedOutput += `   → ${action}\n`;
+                                        }
+                                    });
+                                }
+                                
+                                formattedOutput += `\n${'─'.repeat(60)}\n`;
+                                setStreamOutput(prev => prev + formattedOutput);
                             } else if (data.type === 'completed') {
-                                setStreamOutput(prev => prev + `✅ ${data.message}\n\n`);
+                                setStreamOutput(prev => prev + `\n🎉 ${data.message}\n\n`);
                             } else if (data.type === 'error') {
-                                setStreamOutput(prev => prev + `❌ Error: ${data.message}\n\n`);
+                                setStreamOutput(prev => prev + `\n❌ Error: ${data.message}\n\n`);
                             } else {
                                 // Fallback for any other data format
                                 setStreamOutput(prev => prev + JSON.stringify(data, null, 2) + '\n\n');
@@ -189,16 +233,6 @@ export default function Home() {
             >
               AR25 HACK
             </motion.h1>
-            <motion.div
-              className="flex items-center justify-center gap-2 text-xl text-gray-300"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 1, duration: 0.8 }}
-            >
-              <Sparkles className="w-6 h-6 text-yellow-400" />
-              <span>AI-Powered Browser Automation</span>
-              <Zap className="w-6 h-6 text-blue-400" />
-            </motion.div>
           </motion.div>
 
           {/* Animated Form with file upload */}
@@ -213,123 +247,81 @@ export default function Home() {
               whileHover={{ scale: 1.02 }}
               transition={{ type: "spring", stiffness: 300 }}
             >
-              {/* File Upload Section */}
+              {/* Text Input Section */}
               <motion.div 
                 className="mb-6"
                 initial={{ scale: 0.9 }}
                 animate={{ scale: 1 }}
                 transition={{ delay: 2, duration: 0.5 }}
               >
-                {!uploadedFile ? (
+                <motion.div
+                  className="space-y-4"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 2.2 }}
+                >
                   <motion.div
-                    className={`
-                      border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all duration-300
-                      ${isDragOver 
-                        ? 'border-cyan-400 bg-cyan-400/10 scale-105' 
-                        : 'border-gray-400/50 hover:border-cyan-400/70 hover:bg-cyan-400/5'
-                      }
-                    `}
-                    onClick={handleUploadClick}
-                    whileHover={{ 
-                      borderColor: "rgb(34, 211, 238)",
-                      backgroundColor: "rgba(34, 211, 238, 0.1)",
-                      scale: 1.02 
+                    animate={{ 
+                      y: [0, -5, 0],
+                      scale: [1, 1.02, 1]
                     }}
-                    whileTap={{ scale: 0.98 }}
+                    transition={{ 
+                      duration: 3,
+                      repeat: Infinity,
+                      ease: "easeInOut"
+                    }}
                   >
-                    <motion.div
-                      animate={{ 
-                        y: [0, -10, 0],
-                        rotate: [0, 5, -5, 0]
-                      }}
-                      transition={{ 
-                        duration: 2,
-                        repeat: Infinity,
-                        ease: "easeInOut"
-                      }}
-                    >
-                      <Upload className="mx-auto h-16 w-16 text-cyan-400 mb-4" />
-                    </motion.div>
-                    <motion.h3 
-                      className="text-2xl font-bold text-white mb-2"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: 2.2 }}
-                    >
-                      Upload Screen Recording
-                    </motion.h3>
-                    <motion.p 
-                      className="text-gray-300 mb-4 text-lg"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: 2.4 }}
-                    >
-                      Drop your video here or click to browse
-                    </motion.p>
-                    <motion.p 
-                      className="text-sm text-gray-400"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: 2.6 }}
-                    >
-                      Supports .mov, .mp4, and other video formats
-                    </motion.p>
+                    <MessageSquare className="mx-auto h-16 w-16 text-cyan-400 mb-4" />
                   </motion.div>
-                ) : (
-                  <motion.div 
-                    className="border border-cyan-400/50 bg-cyan-400/10 rounded-xl p-6 backdrop-blur-sm"
-                    initial={{ scale: 0, rotate: -10 }}
-                    animate={{ scale: 1, rotate: 0 }}
-                    transition={{ type: "spring", bounce: 0.5 }}
+                  
+                  <motion.h3 
+                    className="text-2xl font-bold text-white mb-2 text-center"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 2.4 }}
                   >
-                    <div className="flex items-center justify-between">
-                      <motion.div 
-                        className="flex items-center space-x-4"
-                        initial={{ x: -20, opacity: 0 }}
-                        animate={{ x: 0, opacity: 1 }}
-                        transition={{ delay: 0.2 }}
-                      >
-                        <motion.div
-                          animate={{ rotate: 360 }}
-                          transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                        >
-                          <Video className="h-10 w-10 text-cyan-400" />
-                        </motion.div>
-                        <div>
-                          <p className="font-semibold text-white text-lg">{uploadedFile.name}</p>
-                          <p className="text-sm text-gray-300">
-                            {(uploadedFile.size / (1024 * 1024)).toFixed(2)} MB
-                          </p>
-                        </div>
-                      </motion.div>
-                      <motion.button
-                        type="button"
-                        onClick={handleRemoveFile}
-                        className="p-2 hover:bg-red-500/20 rounded-full transition-colors border border-red-400/50"
-                        whileHover={{ scale: 1.1, rotate: 90 }}
-                        whileTap={{ scale: 0.9 }}
-                      >
-                        <X className="h-6 w-6 text-red-400" />
-                      </motion.button>
-                    </div>
-                  </motion.div>
-                )}
+                    AI Agent Instructions
+                  </motion.h3>
+                  
+                  <motion.p 
+                    className="text-gray-300 mb-4 text-lg text-center"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 2.6 }}
+                  >
+                    Describe what you want the AI agent to do
+                  </motion.p>
+                  
+                  <motion.textarea
+                    value={textInput}
+                    onChange={handleTextChange}
+                    placeholder="Enter your instructions here... For example: 'Search for React tutorials on YouTube and bookmark the top 3 results'"
+                    className="w-full min-h-[200px] p-4 bg-black/50 border border-cyan-400/30 rounded-xl text-white placeholder-gray-400 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 focus:outline-none transition-all duration-300 resize-vertical"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: 2.8 }}
+                    whileFocus={{ 
+                      borderColor: "rgb(34, 211, 238)",
+                      scale: 1.01
+                    }}
+                  />
+                  
+                  <motion.p 
+                    className="text-sm text-gray-400 text-center"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 3 }}
+                  >
+                    The AI agent will execute your instructions using a browser
+                  </motion.p>
+                </motion.div>
               </motion.div>
-
-              <input
-                ref={fileInput}
-                type="file"
-                name="file"
-                accept=".mov,video/*"
-                onChange={handleFileSelect}
-                className="hidden"
-              />
 
               {/* Animated Submit button */}
               <motion.button
                 type="submit"
                 disabled={isStreaming}
-                onClick={uploadFile}
+                onClick={launchAgent}
                 className={`
                   relative px-8 py-4 rounded-xl font-bold text-lg transition-all duration-300 overflow-hidden
                   ${isStreaming 
@@ -382,41 +374,6 @@ export default function Home() {
             </motion.form>
           </motion.div>
 
-          {/* Animated Video player - only show if file is uploaded */}
-          <AnimatePresence>
-            {uploadedFile && (
-              <motion.div 
-                className="mb-8"
-                initial={{ opacity: 0, scale: 0.8, y: 50 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.8, y: -50 }}
-                transition={{ type: "spring", bounce: 0.4, duration: 0.8 }}
-              >
-                <motion.div
-                  className="backdrop-blur-md bg-white/10 rounded-2xl p-6 border border-white/20"
-                  whileHover={{ scale: 1.02 }}
-                  transition={{ type: "spring", stiffness: 300 }}
-                >
-                  <motion.h2 
-                    className="text-2xl font-bold text-white mb-4 flex items-center gap-2"
-                    initial={{ x: -20, opacity: 0 }}
-                    animate={{ x: 0, opacity: 1 }}
-                    transition={{ delay: 0.2 }}
-                  >
-                    <Video className="w-6 h-6 text-cyan-400" />
-                    Video Preview
-                  </motion.h2>
-                  <motion.div
-                    initial={{ borderRadius: 0 }}
-                    animate={{ borderRadius: 16 }}
-                    transition={{ delay: 0.4, duration: 0.5 }}
-                  >
-                    <VideoPlayer file={uploadedFile} />
-                  </motion.div>
-                </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>
 
           {/* Animated Terminal Stream output display */}
           <AnimatePresence>
@@ -481,16 +438,21 @@ export default function Home() {
                   
                   {/* Terminal content */}
                   <motion.div 
-                    className="p-6 min-h-[300px] max-h-[500px] overflow-auto"
+                    ref={terminalRef}
+                    className="p-6 min-h-[300px] max-h-[600px] overflow-auto terminal-scrollbar"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: 0.8 }}
                   >
                     <motion.pre 
-                      className="text-green-400 font-mono text-sm whitespace-pre-wrap leading-relaxed"
+                      className="text-green-300 font-mono text-sm whitespace-pre-wrap leading-relaxed"
                       initial={{ y: 20 }}
                       animate={{ y: 0 }}
                       transition={{ delay: 1 }}
+                      style={{ 
+                        textShadow: '0 0 10px rgba(34, 197, 94, 0.3)',
+                        fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+                      }}
                     >
                       {streamOutput || (
                         <motion.span

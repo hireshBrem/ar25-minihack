@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "ai": "^5.0.43",
+    "browser-use-node": "^0.1.11",
     "browser-use-sdk": "^2.0.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
