@@ -10,7 +10,6 @@ This AI browser agent can understand natural language instructions and perform c
 
 - **Natural Language Interface**: Describe tasks in plain English
 - **Intelligent Browser Automation**: AI-powered web interactions
-- **Smart Element Detection**: Automatically finds and interacts with web elements
 - **Multi-step Task Execution**: Handles complex workflows across multiple pages
 - **Real-time Feedback**: Live updates as tasks are executed
 
