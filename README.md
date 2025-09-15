@@ -30,8 +30,9 @@ This AI browser agent can understand natural language instructions and perform c
 2. **Set up environment variables**
    Create a `.env.local` file:
    ```env
-   OPENAI_API_KEY=your_openai_api_key
+   BROWSER_USE_API_KEY=your_browser_use_api_key
    ```
+   > 👉 [Get your Browser-Use API key here](https://browser-use.com/)
 
 3. **Run the application**
    ```bash
